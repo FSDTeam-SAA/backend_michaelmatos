@@ -1,3 +1,5 @@
+import dotenv from "dotenv";
+dotenv.config();
 import cloudinary from "cloudinary";
 import nodemailer from "nodemailer";
 import { Notification } from "../models/notification.model.js";
@@ -14,10 +16,13 @@ export const sendResponse = (res, { statusCode, success, message, data }) => {
 
 export const uploadOnCloudinary = (fileBuffer, options = {}) =>
   new Promise((resolve, reject) => {
-    const stream = cloudinary.v2.uploader.upload_stream(options, (error, result) => {
-      if (error) return reject(error);
-      resolve(result);
-    });
+    const stream = cloudinary.v2.uploader.upload_stream(
+      options,
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      },
+    );
     stream.end(fileBuffer);
   });
 
@@ -58,7 +63,12 @@ export const sendPasswordResetCode = async (email, code) => {
 };
 
 export const createNotification = async (userId, message, type, extra = {}) => {
-  const notification = await Notification.create({ userId, message, type, ...extra });
+  const notification = await Notification.create({
+    userId,
+    message,
+    type,
+    ...extra,
+  });
   const { getIO } = await import("../app.js");
   const io = getIO();
   if (io) io.to(String(userId)).emit("newNotification", notification);
