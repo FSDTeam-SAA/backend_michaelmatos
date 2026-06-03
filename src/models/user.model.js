@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    email: { type: String, required: true, lowercase: true, trim: true },
     password: { type: String, required: true },
     avatar: { type: String, default: "" },
     bio: { type: String, default: "", maxlength: 300 },
@@ -23,7 +23,7 @@ const userSchema = new mongoose.Schema(
     tripsCount: { type: Number, default: 0 },
     blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 userSchema.index({ email: 1 });
