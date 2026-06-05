@@ -20,9 +20,14 @@ export const updateProfile = catchAsync(async (req, res, next) => {
   if (bio !== undefined) updateData.bio = bio;
   if (location !== undefined) updateData.location = location;
 
-  if (req.file) {
-    const result = await uploadOnCloudinary(req.file.buffer, { folder: "travel/avatars" });
+  if (req.files && req.files.avatar) {
+    const result = await uploadOnCloudinary(req.files.avatar[0].buffer, { folder: "travel/avatars" });
     updateData.avatar = result.secure_url;
+  }
+  if (req.files && req.files.coverPhoto) {
+    console.log("Uploading cover photo...");
+    const result = await uploadOnCloudinary(req.files.coverPhoto[0].buffer, { folder: "travel/coverPhotos" });
+    updateData.coverPhoto = result.secure_url;
   }
 
   const updated = await User.findByIdAndUpdate(req.user._id, updateData, { new: true })

@@ -13,7 +13,7 @@ const router = express.Router();
 router.use(isAuthenticated);
 
 router.get("/me", getMyProfile);
-router.patch("/me", upload.single("avatar"), updateProfile);
+router.patch("/me", upload.fields([{ name: "avatar", maxCount: 1 }, { name: "coverPhoto", maxCount: 1 }]), updateProfile);
 router.get("/me/saved-posts", getSavedPosts);
 router.post("/help-ticket", submitHelpTicket);
 
