@@ -53,7 +53,7 @@ export const getFeed = catchAsync(async (req, res, next) => {
   const followingIds = following.map((f) => f.followingId);
   followingIds.push(req.user._id);
 
-  const posts = await Post.find({ userId: { $in: followingIds }, isPrivate: false })
+  const posts = await Post.find({  isPrivate: false })
     .populate("userId", "name avatar location")
     .sort({ createdAt: -1 })
     .skip(skip)
