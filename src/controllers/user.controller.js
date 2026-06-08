@@ -36,9 +36,10 @@ export const updateProfile = catchAsync(async (req, res, next) => {
   sendResponse(res, { statusCode: 200, success: true, message: "Profile updated", data: updated });
 });
 
-export const getUserProfile = catchAsync(async (req, res, next) => {
+export const  getUserProfile = catchAsync(async (req, res, next) => {
   const { id } = req.params;
-  const user = await User.findById(id).select("name email avatar bio location followersCount followingCount postsCount tripsCount");
+  const user = await User.findById(id).select("name email avatar coverPhoto bio location followersCount followingCount postsCount tripsCount");
+  
   if (!user) return next(new AppError(404, "User not found"));
 
   // Check if requester follows this user
