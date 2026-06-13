@@ -13,6 +13,8 @@ const placeSchema = new mongoose.Schema(
       type: { type: String, enum: ["Point"], default: "Point" },
       coordinates: { type: [Number], required: true }, // [longitude, latitude]
     },
+    latitude: { type: Number, default: undefined },
+    longitude: { type: Number, default: undefined },
     country: { type: String, default: "" },
     rating: { type: Number, default: 0, min: 0, max: 5 },
     ratingCount: { type: Number, default: 0 },

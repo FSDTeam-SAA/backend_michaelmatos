@@ -6,9 +6,12 @@ import { Like } from "../models/like.model.js";
 import { Bookmark } from "../models/bookmark.model.js";
 import { Follow } from "../models/follow.model.js";
 import { User } from "../models/user.model.js";
+import { parseLocationInput, withNormalizedLocation } from "../utility/location.js";
+import { findOrCreatePlace } from "../services/place.service.js";
 
 export const createPost = catchAsync(async (req, res, next) => {
-  const { caption, locationName, longitude, latitude, placeType } = req.body;
+  const { caption, placeType } = req.body;
+  const locationInput = parseLocationInput(req.body);
 
   if (!req.files || req.files.length === 0)
     return next(new AppError(400, "At least one image is required"));
@@ -17,16 +20,27 @@ export const createPost = catchAsync(async (req, res, next) => {
     req.files.map((file) => uploadOnCloudinary(file.buffer, { folder: "travel/posts" }).then((r) => r.secure_url))
   );
 
+  if (locationInput.hasValidCoordinates) {
+    await findOrCreatePlace({
+      name: locationInput.name || "Post location",
+      longitude: locationInput.longitude,
+      latitude: locationInput.latitude,
+      placeType: placeType || "city",
+      tripImage: imageUrls[0] || "",
+      radius: 200,
+      incrementTripCount: false,
+    });
+  }
+
   const post = await Post.create({
     userId: req.user._id,
     caption,
     images: imageUrls,
     location: {
-      name: locationName || "",
-      coordinates: {
-        type: "Point",
-        coordinates: longitude && latitude ? [parseFloat(longitude), parseFloat(latitude)] : [0, 0],
-      },
+      name: locationInput.name,
+      latitude: locationInput.latitude,
+      longitude: locationInput.longitude,
+      ...(locationInput.coordinates ? { coordinates: locationInput.coordinates } : {}),
     },
     placeType: placeType || "city",
   });
@@ -42,7 +56,7 @@ export const createPost = catchAsync(async (req, res, next) => {
     });
   }
 
-  sendResponse(res, { statusCode: 201, success: true, message: "Post created successfully", data: post });
+  sendResponse(res, { statusCode: 201, success: true, message: "Post created successfully", data: withNormalizedLocation(post) });
 });
 
 export const getFeed = catchAsync(async (req, res, next) => {
@@ -71,7 +85,7 @@ export const getFeed = catchAsync(async (req, res, next) => {
   const bookmarkedSet = new Set(bookmarks.map((b) => b.postId.toString()));
 
   const enriched = posts.map((p) => ({
-    ...p.toObject(),
+    ...withNormalizedLocation(p),
     isLiked: likedSet.has(p._id.toString()),
     isBookmarked: bookmarkedSet.has(p._id.toString()),
   }));
@@ -94,7 +108,7 @@ export const getPostById = catchAsync(async (req, res, next) => {
     statusCode: 200,
     success: true,
     message: "Post retrieved",
-    data: { ...post.toObject(), isLiked: !!liked, isBookmarked: !!bookmarked },
+    data: { ...withNormalizedLocation(post), isLiked: !!liked, isBookmarked: !!bookmarked },
   });
 });
 
