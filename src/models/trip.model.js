@@ -1,5 +1,13 @@
 import mongoose from "mongoose";
 
+const geoPointSchema = new mongoose.Schema(
+  {
+    type: { type: String, enum: ["Point"], default: "Point" },
+    coordinates: { type: [Number], required: true },
+  },
+  { _id: false }
+);
+
 const tripSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
@@ -7,10 +15,9 @@ const tripSchema = new mongoose.Schema(
     tripName: { type: String, required: true, trim: true },
     location: {
       name: { type: String, default: "" },
-      coordinates: {
-        type: { type: String, enum: ["Point"], default: "Point" },
-        coordinates: { type: [Number], default: [0, 0] },
-      },
+      latitude: { type: Number, default: undefined },
+      longitude: { type: Number, default: undefined },
+      coordinates: { type: geoPointSchema, default: undefined },
     },
     placeId: { type: mongoose.Schema.Types.ObjectId, ref: "Place" },
     fromDate: { type: Date, required: true },

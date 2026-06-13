@@ -3,6 +3,7 @@ import { sendResponse } from "../utility/helper.js";
 import { Place } from "../models/place.model.js";
 import { User } from "../models/user.model.js";
 import { Post } from "../models/post.model.js";
+import { PlaceBookmark } from "../models/placeBookmark.model.js";
 
 export const search = catchAsync(async (req, res, next) => {
   const { q, type = "all", page = 1, limit = 10 } = req.query;
@@ -14,10 +15,16 @@ export const search = catchAsync(async (req, res, next) => {
   const results = {};
 
   if (type === "all" || type === "places") {
-    results.places = await Place.find({ $or: [{ name: regex }, { country: regex }] })
+    const places = await Place.find({ $or: [{ name: regex }, { country: regex }] })
       .sort({ tripCount: -1 })
       .skip(skip)
       .limit(Number(limit));
+    const bookmarks = await PlaceBookmark.find({ userId: req.user._id, placeId: { $in: places.map((p) => p._id) } });
+    const bookmarkedSet = new Set(bookmarks.map((b) => b.placeId.toString()));
+    results.places = places.map((place) => ({
+      ...place.toObject(),
+      isBookmarked: bookmarkedSet.has(place._id.toString()),
+    }));
   }
 
   if (type === "all" || type === "users") {

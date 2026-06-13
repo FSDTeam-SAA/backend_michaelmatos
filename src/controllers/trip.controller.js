@@ -5,11 +5,13 @@ import { Trip } from "../models/trip.model.js";
 import { Place } from "../models/place.model.js";
 import { User } from "../models/user.model.js";
 import { findOrCreatePlace } from "../services/place.service.js";
+import { parseLocationInput, withNormalizedLocation } from "../utility/location.js";
 
 export const createTrip = catchAsync(async (req, res, next) => {
-  const { tripName, locationName, longitude, latitude, fromDate, toDate, tripType, country } = req.body;
+  const { tripName, fromDate, toDate, tripType, country } = req.body;
+  const locationInput = parseLocationInput(req.body);
 
-  if (!tripName || !locationName || !longitude || !latitude || !fromDate || !toDate)
+  if (!tripName || !locationInput.name || !locationInput.hasValidCoordinates || !fromDate || !toDate)
     return next(new AppError(400, "tripName, locationName, longitude, latitude, fromDate, toDate are required"));
 
   if (new Date(toDate) < new Date(fromDate))
@@ -23,9 +25,9 @@ export const createTrip = catchAsync(async (req, res, next) => {
 
   // Find or create the place and increment tripCount
   const place = await findOrCreatePlace({
-    name: locationName,
-    longitude,
-    latitude,
+    name: locationInput.name,
+    longitude: locationInput.longitude,
+    latitude: locationInput.latitude,
     placeType: tripType || "city",
     country,
     tripImage: coverImageUrl,
@@ -45,8 +47,10 @@ export const createTrip = catchAsync(async (req, res, next) => {
     coverImage: coverImageUrl,
     tripName,
     location: {
-      name: locationName,
-      coordinates: { type: "Point", coordinates: [parseFloat(longitude), parseFloat(latitude)] },
+      name: locationInput.name,
+      latitude: locationInput.latitude,
+      longitude: locationInput.longitude,
+      coordinates: locationInput.coordinates,
     },
     placeId: place._id,
     fromDate: from,
@@ -57,7 +61,7 @@ export const createTrip = catchAsync(async (req, res, next) => {
 
   await User.findByIdAndUpdate(req.user._id, { $inc: { tripsCount: 1 } });
 
-  sendResponse(res, { statusCode: 201, success: true, message: "Trip created successfully", data: trip });
+  sendResponse(res, { statusCode: 201, success: true, message: "Trip created successfully", data: withNormalizedLocation(trip) });
 });
 
 export const getMyTrips = catchAsync(async (req, res, next) => {
@@ -82,11 +86,13 @@ export const getMyTrips = catchAsync(async (req, res, next) => {
     Trip.countDocuments({ userId: req.user._id, status: "completed" }),
   ]);
 
+  const normalizedTrips = trips.map(withNormalizedLocation);
+
   sendResponse(res, {
     statusCode: 200,
     success: true,
     message: "Trips retrieved",
-    data: { trips, total, page: Number(page), stats: { ongoing: ongoingCount, upcoming: upcomingCount, completed: completedCount } },
+    data: { trips: normalizedTrips, total, page: Number(page), stats: { ongoing: ongoingCount, upcoming: upcomingCount, completed: completedCount } },
   });
 });
 
@@ -96,7 +102,7 @@ export const getTripById = catchAsync(async (req, res, next) => {
   if (!trip.userId._id.equals(req.user._id) && req.user.accountType !== "admin")
     return next(new AppError(403, "Access denied"));
 
-  sendResponse(res, { statusCode: 200, success: true, message: "Trip retrieved", data: trip });
+  sendResponse(res, { statusCode: 200, success: true, message: "Trip retrieved", data: withNormalizedLocation(trip) });
 });
 
 export const updateTrip = catchAsync(async (req, res, next) => {

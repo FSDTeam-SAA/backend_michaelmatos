@@ -8,6 +8,7 @@ export const findOrCreatePlace = async ({
   country,
   tripImage = "",
   radius = 200,
+  incrementTripCount = true,
 }) => {
   const parsedLongitude = parseFloat(longitude);
   const parsedLatitude = parseFloat(latitude);
@@ -22,7 +23,9 @@ export const findOrCreatePlace = async ({
   });
 
   if (existing) {
-    existing.tripCount += 1;
+    if (incrementTripCount) existing.tripCount += 1;
+    existing.latitude = parsedLatitude;
+    existing.longitude = parsedLongitude;
     if (tripImage) {
       if (!existing.coverImage) existing.coverImage = tripImage;
       if (!existing.images.includes(tripImage)) existing.images.push(tripImage);
@@ -36,7 +39,9 @@ export const findOrCreatePlace = async ({
     placeType: placeType || "city",
     country: country || "",
     location: { type: "Point", coordinates: [parsedLongitude, parsedLatitude] },
-    tripCount: 1,
+    latitude: parsedLatitude,
+    longitude: parsedLongitude,
+    tripCount: incrementTripCount ? 1 : 0,
     coverImage: tripImage || "",
     images: tripImage ? [tripImage] : [],
   });
