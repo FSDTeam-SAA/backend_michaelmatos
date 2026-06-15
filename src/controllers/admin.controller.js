@@ -7,9 +7,14 @@ import { Place } from "../models/place.model.js";
 import { Review } from "../models/review.model.js";
 import { Follow } from "../models/follow.model.js";
 import { HelpTicket } from "../models/helpTicket.model.js";
+import { Subscription } from "../models/subscription.model.js";
+import { Terms } from "../models/terms.model.js";
 
 // ── Dashboard Statistics ─────────────────────────────────────────────────────
 export const getDashboardStats = catchAsync(async (req, res, next) => {
+  const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const startOfLastMonth = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
+
   const [
     totalUsers,
     totalPosts,
@@ -18,6 +23,10 @@ export const getDashboardStats = catchAsync(async (req, res, next) => {
     totalReviews,
     newUsersToday,
     newPostsToday,
+    paidUsers,
+    usersThisMonth,
+    usersLastMonth,
+    earningsAgg,
   ] = await Promise.all([
     User.countDocuments({ accountType: "user" }),
     Post.countDocuments(),
@@ -26,14 +35,70 @@ export const getDashboardStats = catchAsync(async (req, res, next) => {
     Review.countDocuments(),
     User.countDocuments({ createdAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) } }),
     Post.countDocuments({ createdAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) } }),
+    User.countDocuments({ accountType: "user", subscriptionStatus: "paid" }),
+    User.countDocuments({ accountType: "user", createdAt: { $gte: startOfMonth } }),
+    User.countDocuments({ accountType: "user", createdAt: { $gte: startOfLastMonth, $lt: startOfMonth } }),
+    User.aggregate([
+      { $match: { accountType: "user" } },
+      { $group: { _id: null, total: { $sum: "$totalSpent" } } },
+    ]),
   ]);
+
+  const totalEarnings = earningsAgg[0]?.total || 0;
+  const freeUsers = Math.max(totalUsers - paidUsers, 0);
+  const pct = (cur, prev) => (prev > 0 ? Number((((cur - prev) / prev) * 100).toFixed(1)) : cur > 0 ? 100 : 0);
 
   sendResponse(res, {
     statusCode: 200,
     success: true,
     message: "Dashboard stats",
-    data: { totalUsers, totalPosts, totalTrips, totalPlaces, totalReviews, newUsersToday, newPostsToday },
+    data: {
+      totalUsers,
+      totalPosts,
+      totalTrips,
+      totalPlaces,
+      totalReviews,
+      newUsersToday,
+      newPostsToday,
+      paidUsers,
+      freeUsers,
+      totalEarnings,
+      usersThisMonth,
+      usersLastMonth,
+      usersGrowthPct: pct(usersThisMonth, usersLastMonth),
+    },
   });
+});
+
+// ── User Join Comparison (this month vs last month, by day-of-month) ─────────
+export const getUserJoinComparison = catchAsync(async (req, res, next) => {
+  const now = new Date();
+  const startThis = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startLast = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+  const aggregate = (start, end) =>
+    User.aggregate([
+      { $match: { accountType: "user", createdAt: { $gte: start, $lt: end } } },
+      { $group: { _id: { $dayOfMonth: "$createdAt" }, count: { $sum: 1 } } },
+      { $sort: { _id: 1 } },
+    ]);
+
+  const [thisMonth, lastMonth] = await Promise.all([
+    aggregate(startThis, new Date(now.getFullYear(), now.getMonth() + 1, 1)),
+    aggregate(startLast, startThis),
+  ]);
+
+  const map = (arr) => arr.reduce((acc, x) => ({ ...acc, [x._id]: x.count }), {});
+  const tMap = map(thisMonth);
+  const lMap = map(lastMonth);
+
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const data = Array.from({ length: daysInMonth }, (_, i) => {
+    const day = i + 1;
+    return { day, thisMonth: tMap[day] || 0, lastMonth: lMap[day] || 0 };
+  });
+
+  sendResponse(res, { statusCode: 200, success: true, message: "User join comparison", data });
 });
 
 // ── User Join Chart (last N days/months) ────────────────────────────────────
@@ -67,12 +132,13 @@ export const getUserJoinChart = catchAsync(async (req, res, next) => {
 
 // ── User Management ──────────────────────────────────────────────────────────
 export const getUsers = catchAsync(async (req, res, next) => {
-  const { search = "", page = 1, limit = 20, isBanned } = req.query;
+  const { search = "", page = 1, limit = 20, isBanned, status } = req.query;
   const skip = (page - 1) * limit;
 
   const filter = { accountType: "user" };
   if (search) filter.$or = [{ name: { $regex: search, $options: "i" } }, { email: { $regex: search, $options: "i" } }];
   if (isBanned !== undefined) filter.isBanned = isBanned === "true";
+  if (status && status !== "all") filter.subscriptionStatus = status; // "paid" | "free"
 
   const users = await User.find(filter)
     .select("-password -refreshToken -verificationCode -passwordResetCode")
@@ -235,4 +301,50 @@ export const updateTicketStatus = catchAsync(async (req, res, next) => {
   const ticket = await HelpTicket.findByIdAndUpdate(req.params.id, { status }, { new: true });
   if (!ticket) return sendResponse(res, { statusCode: 404, success: false, message: "Ticket not found", data: null });
   sendResponse(res, { statusCode: 200, success: true, message: "Ticket status updated", data: ticket });
+});
+
+// ── Subscription Plans ───────────────────────────────────────────────────────
+export const getSubscriptions = catchAsync(async (req, res, next) => {
+  const plans = await Subscription.find().sort({ price: 1 });
+  sendResponse(res, { statusCode: 200, success: true, message: "Subscription plans retrieved", data: plans });
+});
+
+export const createSubscription = catchAsync(async (req, res, next) => {
+  const { name, description, price, currency, interval, searchLimit, features } = req.body;
+  if (!name || price === undefined)
+    return sendResponse(res, { statusCode: 400, success: false, message: "Name and price are required", data: null });
+
+  const plan = await Subscription.create({ name, description, price, currency, interval, searchLimit, features });
+  sendResponse(res, { statusCode: 201, success: true, message: "Subscription plan created", data: plan });
+});
+
+export const updateSubscription = catchAsync(async (req, res, next) => {
+  const plan = await Subscription.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+  if (!plan) return sendResponse(res, { statusCode: 404, success: false, message: "Plan not found", data: null });
+  sendResponse(res, { statusCode: 200, success: true, message: "Subscription plan updated", data: plan });
+});
+
+export const deleteSubscription = catchAsync(async (req, res, next) => {
+  const plan = await Subscription.findByIdAndDelete(req.params.id);
+  if (!plan) return sendResponse(res, { statusCode: 404, success: false, message: "Plan not found", data: null });
+  sendResponse(res, { statusCode: 200, success: true, message: "Subscription plan deleted", data: null });
+});
+
+// ── Terms & Conditions (and other legal docs) ────────────────────────────────
+export const getTerms = catchAsync(async (req, res, next) => {
+  const type = req.query.type || "terms";
+  let doc = await Terms.findOne({ type });
+  if (!doc) doc = await Terms.create({ type, content: "" });
+  sendResponse(res, { statusCode: 200, success: true, message: "Terms retrieved", data: doc });
+});
+
+export const updateTerms = catchAsync(async (req, res, next) => {
+  const type = req.body.type || "terms";
+  const { content } = req.body;
+  const doc = await Terms.findOneAndUpdate(
+    { type },
+    { content, updatedBy: req.user._id },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
+  sendResponse(res, { statusCode: 200, success: true, message: "Terms updated", data: doc });
 });
