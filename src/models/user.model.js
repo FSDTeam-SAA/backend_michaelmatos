@@ -13,6 +13,11 @@ const userSchema = new mongoose.Schema(
     accountType: { type: String, enum: ["user", "admin"], default: "user" },
     isVerified: { type: Boolean, default: false },
     isBanned: { type: Boolean, default: false },
+    // ── Subscription / billing (used by admin dashboard) ──────────────────────
+    subscriptionStatus: { type: String, enum: ["paid", "free"], default: "free" },
+    currentPlan: { type: mongoose.Schema.Types.ObjectId, ref: "Subscription", default: null },
+    subscribedAt: { type: Date, default: null },
+    totalSpent: { type: Number, default: 0 },
     refreshToken: { type: String, default: "" },
     verificationCode: { type: String, default: "" },
     verificationCodeExpiry: { type: Date },
