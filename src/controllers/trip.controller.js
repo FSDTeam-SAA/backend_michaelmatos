@@ -4,12 +4,15 @@ import { sendResponse, uploadOnCloudinary } from "../utility/helper.js";
 import { Trip } from "../models/trip.model.js";
 import { Place } from "../models/place.model.js";
 import { User } from "../models/user.model.js";
-import { findOrCreatePlace } from "../services/place.service.js";
+import { findMatchingPlace, findOrCreatePlace } from "../services/place.service.js";
 import { parseLocationInput, withNormalizedLocation } from "../utility/location.js";
 
 export const createTrip = catchAsync(async (req, res, next) => {
   const { tripName, fromDate, toDate, tripType, country } = req.body;
   const locationInput = parseLocationInput(req.body);
+  console.log(
+    `[create-trip] called tripName="${tripName || ""}" location="${locationInput.name}" lat=${locationInput.latitude ?? ""} lng=${locationInput.longitude ?? ""}`
+  );
 
   if (!tripName || !locationInput.name || !locationInput.hasValidCoordinates || !fromDate || !toDate)
     return next(new AppError(400, "tripName, locationName, longitude, latitude, fromDate, toDate are required"));
@@ -31,7 +34,7 @@ export const createTrip = catchAsync(async (req, res, next) => {
     placeType: tripType || "city",
     country,
     tripImage: coverImageUrl,
-    radius: 200,
+    radius: 5000,
   });
 
   // Determine initial status
@@ -132,10 +135,24 @@ export const deleteTrip = catchAsync(async (req, res, next) => {
     return next(new AppError(403, "Access denied"));
 
   // Decrement tripCount on place
-  if (trip.placeId) {
-    const update = { $inc: { tripCount: -1 } };
-    if (trip.coverImage) update.$pull = { images: trip.coverImage };
-    await Place.findByIdAndUpdate(trip.placeId, update);
+  const matchingPlace = trip.placeId
+    ? await Place.findById(trip.placeId)
+    : await findMatchingPlace({
+        name: trip.location?.name,
+        longitude: trip.location?.longitude,
+        latitude: trip.location?.latitude,
+        radius: 5000,
+      });
+  if (matchingPlace) {
+    matchingPlace.tripCount = Math.max(0, (matchingPlace.tripCount || 0) - 1);
+    if (trip.coverImage) {
+      matchingPlace.images = matchingPlace.images.filter((image) => image !== trip.coverImage);
+      if (matchingPlace.coverImage === trip.coverImage) {
+        matchingPlace.coverImage = matchingPlace.images[0] || "";
+      }
+    }
+    await matchingPlace.save();
+    console.log(`[delete-trip] decremented place id=${matchingPlace._id} name="${matchingPlace.name}" tripCount=${matchingPlace.tripCount}`);
   }
 
   await trip.deleteOne();

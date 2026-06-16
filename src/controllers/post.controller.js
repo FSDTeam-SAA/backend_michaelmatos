@@ -27,7 +27,7 @@ export const createPost = catchAsync(async (req, res, next) => {
       latitude: locationInput.latitude,
       placeType: placeType || "city",
       tripImage: imageUrls[0] || "",
-      radius: 200,
+      radius: 5000,
       incrementTripCount: false,
     });
   }
